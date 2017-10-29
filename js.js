@@ -10,28 +10,65 @@ function Canvas(selector = null){
 		h : window.innerHeight,
 		w : window.innerWidth
 	}
-	this.images = {
-		player: {
-			img: new Image(),
-			src: './assets/girl.png',
-			width: 94,
-			height: 130,
-			marginTop: 0,
-			marginLeft: 0,
-			columns: 7,
-			rows: 2,
-			fps: 20,
-			name: 'player',
-			stopedPos: {
-				x: 480,
-				y: 130
-			}
+	 
+	 
+
+	this.playerLoaded = new Array()
+
+	this.allFrames = 0
+
+	this.player = {
+		attack: {
+			frames: 17
 		},
-		background: {
-			img: new Image(),
-			src: './assets/2340_LMNnqocbql6M2f74UWq6I6lHi.png'
+		block: {
+			frames: 15
+		},
+		death: {
+			frames: 8
+		},
+		gothit: {
+			frames: 12
+		},
+		idle: {
+			frames: 15
+		},
+		jump: {
+			frames: 15
+		},
+		run: {
+			frames: 16
+		},
+		walk: {
+			frames: 14
 		}
 	}
+
+ 	for(var p in this.player){
+ 		this.player[p].images = new Array()
+ 		this.player[p].loaded = new Array()
+ 	}
+
+	var self = this
+	for(var pos in self.player){
+		fill(self.player[pos].frames).forEach(function(num){
+			if(self.player.hasOwnProperty(pos)){
+				self.allFrames ++
+				var img = new Image()
+				img.src = './assets/knight/'+pos+'/crusader_'+pos+'_200'+num+'.png'
+				self.player[pos].images.push(img)
+				img.addEventListener('load',function(){
+					self.playerLoaded.push(true)
+				})
+			}
+		})
+	}
+
+					console.log(self.playerLoaded)
+					console.log(this.allFrames)
+	// this.sources.push(player)
+	console.log(this.player)
+
 
 	this.clear = function(x=null,y,w,h){
 		if(x === null)
@@ -40,36 +77,46 @@ function Canvas(selector = null){
 			this.ctx.clearRect(x-1,y-1,w+2,h+2)
 	}
 
+
 }
 
 
+function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
 
-Canvas.prototype.load = function(){
-	this.loaded = {
-		player: false,
-		background: false
-	}
-	var obj = this
-	this.images.player.img.src = this.images.player.src 
-	this.images.background.img.src = this.images.background.src 
+function fill(e){
+	var a = []
+	for(var i = 0; i < e; i ++) 
+		a.push(i<10?'0'+i:i)
+	return a
+}
 
-	this.images.player.img.onload = function(){
-		obj.loaded.player = true
-	}
-
-	this.images.background.img.onload = function(){
-		obj.loaded.background = true
-	}
+Array.prototype.last = function(){
+    return this[this.length - 1]
 }
 
 
+Array.prototype.count = function(el){
+	var counter = 0
+	this.forEach(function(e){
+		if(e==el)counter++
+	})
+	return counter
+}
+ 
+ 
 
 Canvas.prototype.draw = function(){
 	var self = this
 	return {
 		image: function(img,sx,sy,swidth,sheight,x,y,width,height){
-			// drawImage(img,x,y,width,height);
-			self.ctx.drawImage(img,sx,sy,swidth,sheight,x,y,width,height)
+			try{
+				self.ctx.drawImage(img,sx,sy,swidth,sheight,x,y,width,height)
+			}catch(e){
+				console.log(e.message)
+				console.log(img)
+			}
 		},
 		rect: function(x,y,w,h){
 			try{
@@ -77,7 +124,6 @@ Canvas.prototype.draw = function(){
 			}catch(e){
 				console.log(e.message)
 			}
-			// self.ctx.stroke()
 		}
 	}
 }
@@ -92,13 +138,31 @@ function Object(name){
 	this.name = name
 	this.position = {}
 	this.dimansion = {}
+	/* for relative dimansion*/
+	this.relative = {}
 	this.lastPosition = {}
+	this.jumpingFps = 0
+
+	/* 
+		save current image to compare next one and if different change this.frameIndex to 0
+		in order to match frame count 
+	*/
+	this.previousFrameImg = {}
+
+	this.frameIndex = 0
+
+	this.speedX = 0
+    this.speedY = 0 
+    this.gravity = 0.03
+    this.gravitySpeed = 0
+    this.touchedGround = false
 	this.going = {
 		left: false,
 		right: false,
 		up: false,
 		down: false
 	}
+	this.jumping = false
 
 	this.fpsCounter = 0
 	this.column = 0
@@ -109,9 +173,13 @@ function Object(name){
 		this.position.y=y
 		return this
 	}
-	this.setDimansion = function(w,h){
+	/* w h , relative w and relative h*/
+	this.setDimansion = function(w,h,rw=0,rh=0){
 		this.dimansion.w=w
 		this.dimansion.h=h
+
+		this.relative.w = rw!=0?rw:w
+		this.relative.h = rh!=0?rh:h
 		return this
 	} 
 	this.attachContext = function(ctx){
@@ -131,23 +199,28 @@ function Object(name){
 		return this
 	}
 
-	this.animate = function(img){
+	this.animate = function(img, width, height, sx, sy){
 		this.lastPosition = this.position
 
 		if(!this.moving){
 			this.column = 0
 			this.row = 0
+			// this.frameIndex = 0
 		}
 
-		if(this.fpsCounter == img.fps){
+		if(this.fpsCounter >= 4){
 			this.fpsCounter = 0
 
-			if(this.column == img.columns - 1){
+			if(this.frameIndex == img.frames-1){
+				this.frameIndex = 0
+			}else{
+				this.frameIndex ++
+			}
+			/*if(this.column == img.columns - 1){
 				this.column = 0
 				this.row ++
 			}else{
 				this.column ++
-				/* gahcerebuli foto urevia da magas vagdeb cilkilad*/
 				if(img.name == 'player'){
 					if(this.column>3 && this.row==1){
 						this.column = 0
@@ -159,25 +232,58 @@ function Object(name){
 
 			if(this.row == img.rows){
 				this.row = 0
-			}
-			console.log(this.row + " " + this.column)
-					
+			}*/
 		}else{
 			this.fpsCounter ++
 		}
-		/* Draw here*/
 
+			if(this.previousFrameImg != img)
+				this.frameIndex = 0
+		/* Draw here*/
 			this.canvas.draw()
-					.image(img.img,
-						this.moving	?(this.column * img.width + img.marginLeft) : img.stopedPos.x,
-						this.moving	?(this.row * img.height + img.marginTop) : img.stopedPos.y,
-						img.width,
-						img.height,
-						this.position.x,
-						this.position.y,
-						this.dimansion.w,
-						this.dimansion.h)
+					.image(img.images[this.frameIndex],
+							sx,
+							sy,
+							width,
+							height,
+							this.position.x,
+							this.position.y,
+							this.dimansion.w,
+							this.dimansion.h
+						)
+			this.previousFrameImg = img
+		return this
 		
+	}
+
+	this.attachGravity = function(objs){
+		var intersected = new Calculate().if.object(this).intersects(objs)
+		/*intersected.forEach(function(e){
+			if(e == true){
+				this.touchedGround = true
+			}
+		})*/
+		var index = intersected.indexOf(true) 
+		if(index != -1){
+			this.touchedGround = true
+			// this.position.y = objs[index].position.y - this.dimansion.h + 20
+			// console.log(objs)
+		}else{
+			// this.touchedGround = false
+			this.gravitySpeed += this.gravity
+	        this.position.x += this.speedX
+	        this.position.y += this.speedY + this.gravitySpeed
+
+		}
+		
+		return this
+	}
+
+	this.attachJumping = function(){
+		if(this.jumping){
+
+		}
+		return this
 	}
 
 }
@@ -190,19 +296,24 @@ function Calculate(){
 			this.target = target
 			return this
 		},
+		next: function(target, increment){
+			this.target = target
+			this.target.position.x+=increment
+			return this
+		},
 		intersects: function(objs){
 			objs = objs instanceof Array? objs : [objs] 
-			
+			objIndexes = new Array()
 			for(var index = 0; len = objs.length, index < len; index ++){
 				var wBiggerOne, wSmallerOne, hBiggerOne, hSmallerOne
-				this.target.dimansion.w < objs[index].dimansion.w ? (
+				this.target.relative.w < objs[index].relative.w ? (
 						wBiggerOne = this.target,
 						wSmallerOne = objs[index] 
 					):(
 						wBiggerOne = objs[index],
 						wSmallerOne = this.target 
 					)
-				this.target.dimansion.h < objs[index].dimansion.h ? (
+				this.target.relative.h < objs[index].relative.h ? (
 						hBiggerOne = this.target,
 						hSmallerOne = objs[index] 
 					):(
@@ -213,23 +324,25 @@ function Calculate(){
 				if((
 						(
 							(wBiggerOne.position.x >= wSmallerOne.position.x && 
-							wBiggerOne.position.x <= wSmallerOne.position.x + wSmallerOne.dimansion.w)
+							wBiggerOne.position.x <= wSmallerOne.position.x + wSmallerOne.relative.w)
 						||
-							(wBiggerOne.position.x + wBiggerOne.dimansion.w >= wSmallerOne.position.x && 
-							wBiggerOne.position.x + wBiggerOne.dimansion.w <= wSmallerOne.position.x + wSmallerOne.dimansion.w)
+							(wBiggerOne.position.x + wBiggerOne.relative.w >= wSmallerOne.position.x && 
+							wBiggerOne.position.x + wBiggerOne.relative.w <= wSmallerOne.position.x + wSmallerOne.relative.w)
 						)
 					)&&(
 							(hBiggerOne.position.y >= hSmallerOne.position.y && 
-							hBiggerOne.position.y <= hSmallerOne.position.y + hSmallerOne.dimansion.w)
+							hBiggerOne.position.y <= hSmallerOne.position.y + hSmallerOne.relative.w)
 						||
-							(hBiggerOne.position.y + hBiggerOne.dimansion.w >= hSmallerOne.position.y && 
-							hBiggerOne.position.y + hBiggerOne.dimansion.w <= hSmallerOne.position.y + hSmallerOne.dimansion.w)
+							(hBiggerOne.position.y + hBiggerOne.relative.h >= hSmallerOne.position.y && 
+							hBiggerOne.position.y /*+ hBiggerOne.relative.h*/ <= hSmallerOne.position.y + hSmallerOne.relative.h)
 						)){
-					return true
+					objIndexes.push(true)
+				}else{
+					objIndexes.push(false)
 				}
 			}
-
-			return false
+			/* returns array with passed object conditions*/
+			return objIndexes
 		}
 	}
 }
@@ -242,20 +355,21 @@ var Game = (function(document, window){
 	var canvas = new Canvas('platformer')
 	
 	/* Loading Components: images, sounds */
-	canvas.load()
 	
 	/* Wait for image loading */
-	var imageLoader = setInterval(function(){
-		if(canvas.loaded.player && canvas.loaded.background){
-			console.log('All Images loaded')
-			clearInterval(imageLoader)
-			/* Initialize game, create object */
+	var myloader = setInterval(function(){
+		if(canvas.allFrames == canvas.playerLoaded.count(true)){
+			console.log('everitying has been loaded')
+			clearInterval(myloader)
+
 			new init()
+			console.log((canvas.playerLoaded.count(true)/canvas.allFrames)*100+' %')
+
 		}else{
-			console.clear()
-			console.log('Images are Loading...')
+			// do it forever
+			console.log((canvas.playerLoaded.count(true)/canvas.allFrames)*100+' %')
 		}
-	},100)
+	},1)
 
 	function init(){
 		console.log('Initializing...')
@@ -265,14 +379,18 @@ var Game = (function(document, window){
 
 		var xCrement = 0, yCrement = 0
 
+		var playerStartedWalking = 0
+		var xCrementSetByRunner = false
 		/* Create Player Object*/
 		var player = new Object('Player')
 		/* Set Position*/
 		player.setPosition(0,0)
 		/* Set Dimansion*/
-		player.setDimansion(80,100)
+		player.setDimansion(299, 240, 200, 230)
 		/* Attach current context*/
 		player.attachContext(canvas)
+
+		var PLAYER_IMG = canvas.player.idle
 
 		/* Attach events listeners to player object*/
 		document.addEventListener('keydown', function(event){
@@ -280,19 +398,37 @@ var Game = (function(document, window){
 				case 39:
 					player.going.right = true
 					player.moving = true
-					xCrement = 1
+					
+					xCrementSetByRunner?
+						null:
+						!player.touchedGround?
+							xCrement = 1:
+						null
+
+					PLAYER_IMG = canvas.player.walk
+					playerStartedWalking!=0?
+						null:
+						playerStartedWalking=(new Date()).getTime()
 				break
 				case 37: 
 					player.going.left = true
 					player.moving = true
 					xCrement = (-1)
+					PLAYER_IMG = canvas.player.walk
+
 				break
 				case 38: 
 					player.going.up = true
 					player.moving = true
-					yCrement = (-1)
+					yCrement = (-10)
+					// player.gravity = -0.06
+					PLAYER_IMG = canvas.player.jump
+					player.touchedGround = false
+					// player.jumping = true
+					// player.touchedGround = false
 				break
 				case 40: 
+					PLAYER_IMG = canvas.player.walk
 					player.going.down = true
 					player.moving = true
 					yCrement = 1
@@ -306,40 +442,55 @@ var Game = (function(document, window){
 					player.going.right = false
 					player.moving = false
 					xCrement = 0
+					PLAYER_IMG = canvas.player.idle
+					playerStartedWalking = 0
 				break
 				case 37: 
 					player.moving = false
 					player.going.left = false
 					xCrement = 0
+					PLAYER_IMG = canvas.player.idle
+
 				break
 				case 38: 
 					player.moving = false
+					// player.jumping = false
+					// player.touchedGround = false
 					player.going.up = false
+					player.gravity = 0.05
 					yCrement = 0
+					PLAYER_IMG = canvas.player.idle
+
 				break
 				case 40: 
 					player.moving = false
 					player.going.down = false
 					yCrement = 0
+					PLAYER_IMG = canvas.player.idle
+
 				break
 			}
 		})
 
-		var obj  = new Object('test')
-		.setPosition(140,300)
-		.setDimansion(40,20)
-		.attachContext(canvas)
 
-		var obj1  = new Object('test')
-		.setPosition(290,300)
-		.setDimansion(30,20)
-		.attachContext(canvas)
 
+		
 
 		var bottomBorder = new Object('border')
 		.setPosition(0, canvas.window.h-100)
 		.setDimansion(canvas.window.w, 20)
 		.attachContext(canvas)
+
+
+		var obstacles = new Array()
+		fill(2).forEach(function(e){	
+			var obs = new Object('obstacle')
+			obs.setPosition(getRandomInt(80,canvas.window.w), 0)
+			obs.setDimansion(50,50)
+			obs.attachContext(canvas)
+			obstacles.push(obs)
+		})
+
 
 
 		/* Main Loop of the Game */
@@ -351,23 +502,70 @@ var Game = (function(document, window){
 				player.going.up || player.going.down){
 				player.setPosition(player.position.x + xCrement, player.position.y + yCrement)
 			}
-			
-			new Calculate()
-						.if
-							.object(player).intersects([obj,obj1])
 
 
+ 
+			/*karoche amgari Caxlartulia  1 iani nishnavs x+1 Seamowmos rebna rom maq mand 3 i t gadadis
+
+				roca dadismushaobs rbenis droara
+				rom x+3 vwer mashin urevs sul dadis da jer ver movwvi ratom
+				
+			*/
+			if(new Calculate().if.next(player,1).intersects(obstacles).indexOf(true)==-1 && player.going.right){
+				console.log("intersected")
+				xCrement = 1
+			}else if(new Calculate().if.next(player,-1).intersects(obstacles).indexOf(true)==-1 && player.going.left){
+				console.log("intersected")
+				xCrement = -1
+			}else{
+				xCrement = 0
+			}
+
+			// canvas.ctx.fillRect(20, 20, 1050, 1000);
 
 			/* cheing*/
 			bottomBorder.update()
-			obj.update()
-			obj1.update()
+			// obj.update()
+			// obj.attachGravity(bottomBorder)
+
+			/*obj1.update()
+			obj1.attachGravity(bottomBorder)
+			*/
+			obstacles.forEach(function(e){
+				e.update()
+				e.attachGravity(bottomBorder)
+			})
+
+			// player.setDimansion(240,299)
+			player.setDimansion(80,109, 50, 109)
+
+			if(player.going.right && (new Date().getTime()-playerStartedWalking>600) /*&& !player.touchedGround*/){
+				xCrementSetByRunner = true
+				xCrement = 2
+				if((new Date().getTime()-playerStartedWalking>750)){
+					xCrement = 3
+				}
+				player.animate(canvas.player.run, 138,155, 100,23)
+
+			}else{
+				player.animate(PLAYER_IMG, 138,155, 100,23)
+				xCrementSetByRunner = false
+			}
 			// player.update()
-			player.animate(canvas.images.player)
 
+			var allgrvtObjs = new Array()
+			obstacles.forEach(function(e){
+				allgrvtObjs.push(e)
+			})
+				player.attachGravity(allgrvtObjs.concat(bottomBorder))
 
+			// player.attachGravity([bottomBorder,obj1])
+			// player.attachGravity([bottomBorder,obj,obj1])
+			// player.attachJumping()
+
+console.log(player.touchedGround)
 				// clearInterval(loopTimer)
-		},1)
+		},15)
 
 	}
 
